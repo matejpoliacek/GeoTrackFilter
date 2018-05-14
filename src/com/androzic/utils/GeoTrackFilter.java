@@ -27,9 +27,13 @@ THE SOFTWARE.
  * https://github.com/lacker/ikalman
  * 
  * Ported by Andrey Novikov, 2013
+ * 
+ * Altered to use Jama matrices by Matej Poliacek, 2018
  */
 
 package com.androzic.utils;
+
+import Jama.Matrix;
 
 /* To use these functions:
 
@@ -71,26 +75,27 @@ public class GeoTrackFilter {
 		 * and more rectangular coordinates. The slight inaccuracy of our
 		 * physics model is not too important.
 		 */
-		f.state_transition.set_identity_matrix();
+		f.state_transition = Matrix.identity(f.state_transition.getRowDimension(), f.state_transition.getColumnDimension());
 		set_seconds_per_timestep(1.0);
 
 		/* We observe (x, y) in each time step */
-		f.observation_model.set_matrix(1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0);
+		double[] vals = {1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0};
+		f.observation_model = new Matrix(vals, f.observation_model.getRowDimension());
 
 		/* Noise in the world. */
 		double pos = 0.000001;
-		f.process_noise_covariance.set_matrix(pos, 0.0, 0.0, 0.0, 0.0, pos,
-				0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0);
+		double[] vals2 = {pos, 0.0, 0.0, 0.0, 0.0, pos, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0};
+		f.process_noise_covariance = new Matrix(vals2, f.process_noise_covariance.getRowDimension());
 
 		/* Noise in our observation */
-		f.observation_noise_covariance.set_matrix(pos * noise, 0.0, 0.0, pos
-				* noise);
+		double[] vals3 = {pos * noise, 0.0, 0.0, pos * noise};
+		f.observation_noise_covariance = new Matrix(vals3, f.observation_noise_covariance.getRowDimension());
 
 		/* The start position is totally unknown, so give a high variance */
-		f.state_estimate.set_matrix(0.0, 0.0, 0.0, 0.0);
-		f.estimate_covariance.set_identity_matrix();
+		f.state_estimate = new Matrix(f.state_estimate.getRowDimension(), f.state_estimate.getColumnDimension(), 0.0);
+		f.estimate_covariance = Matrix.identity(f.estimate_covariance.getRowDimension(), f.estimate_covariance.getColumnDimension());
 		double trillion = 1000.0 * 1000.0 * 1000.0 * 1000.0;
-		f.estimate_covariance.scale_matrix(trillion);
+		f.estimate_covariance = f.estimate_covariance.times(trillion);
 	}
 
 	/* Set the seconds per timestep in the velocity2d model. */
@@ -110,23 +115,26 @@ public class GeoTrackFilter {
 		 * units
 		 */
 		double unit_scaler = 0.001;
-		f.state_transition.data[0][2] = unit_scaler * seconds_per_timestep;
-		f.state_transition.data[1][3] = unit_scaler * seconds_per_timestep;
+		f.state_transition.set(0, 2, unit_scaler * seconds_per_timestep);
+		f.state_transition.set(1, 3, unit_scaler * seconds_per_timestep);
 	}
 
 	/* Update the velocity2d model with new gps data. */
 	void update_velocity2d(double lat, double lon,
 			double seconds_since_last_timestep) {
 		set_seconds_per_timestep(seconds_since_last_timestep);
-		f.observation.set_matrix(lat * 1000.0, lon * 1000.0);
+		
+		double[] vals4 = {lat * 1000.0, lon * 1000.0};
+		
+		f.observation = new Matrix(vals4, f.observation.getRowDimension());
 		f.update();
 	}
 
 	/* Extract a lat long from a velocity2d Kalman filter. */
 	double[] get_lat_long() {
 		double[] latlon = new double[2];
-		latlon[0] = f.state_estimate.data[0][0] / 1000.0;
-		latlon[1] = f.state_estimate.data[1][0] / 1000.0;
+		latlon[0] = f.state_estimate.get(0, 0) / 1000.0;
+		latlon[1] = f.state_estimate.get(1, 0) / 1000.0;
 		return latlon;
 	}
 
@@ -136,8 +144,8 @@ public class GeoTrackFilter {
 	 */
 	double[] get_velocity() {
 		double[] delta_latlon = new double[2];
-		delta_latlon[0] = f.state_estimate.data[2][0] / (1000.0 * 1000.0);
-		delta_latlon[1] = f.state_estimate.data[3][0] / (1000.0 * 1000.0);
+		delta_latlon[0] = f.state_estimate.get(2, 0) / (1000.0 * 1000.0);
+		delta_latlon[1] = f.state_estimate.get(3, 0) / (1000.0 * 1000.0);
 		return delta_latlon;
 	}
 

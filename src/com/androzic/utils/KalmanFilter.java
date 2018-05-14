@@ -27,9 +27,13 @@ THE SOFTWARE.
  * https://github.com/lacker/ikalman
  * 
  * Ported by Andrey Novikov, 2013
+ * 
+ * Altered to use Jama matrices by Matej Poliacek, 2018
  */
 
 package com.androzic.utils;
+
+import Jama.Matrix;
 
 /* Refer to http://en.wikipedia.org/wiki/Kalman_filter for
  mathematical details. The naming scheme is that variables get names
@@ -135,44 +139,44 @@ public class KalmanFilter {
 		timestep++;
 
 		/* Predict the state */
-		Matrix.multiply_matrix(state_transition, state_estimate, predicted_state);
+		predicted_state = state_transition.times(state_estimate);
 
 		/* Predict the state estimate covariance */
-		Matrix.multiply_matrix(state_transition, estimate_covariance, big_square_scratch);
-		Matrix.multiply_by_transpose_matrix(big_square_scratch, state_transition, predicted_estimate_covariance);
-		Matrix.add_matrix(predicted_estimate_covariance, process_noise_covariance, predicted_estimate_covariance);
+		big_square_scratch = state_transition.times(estimate_covariance);
+		predicted_estimate_covariance = big_square_scratch.times(state_transition.transpose());
+		predicted_estimate_covariance = predicted_estimate_covariance.plus(process_noise_covariance);
 	}
 
 	/* Just the estimation phase of update. */
 	void estimate() {
 		/* Calculate innovation */
-		Matrix.multiply_matrix(observation_model, predicted_state, innovation);
-		Matrix.subtract_matrix(observation, innovation, innovation);
+		innovation = observation_model.times(predicted_state);
+		innovation = observation.minus(innovation);
 
 		/* Calculate innovation covariance */
-		Matrix.multiply_by_transpose_matrix(predicted_estimate_covariance, observation_model, vertical_scratch);
-		Matrix.multiply_matrix(observation_model, vertical_scratch, innovation_covariance);
-		Matrix.add_matrix(innovation_covariance, observation_noise_covariance, innovation_covariance);
+		vertical_scratch = predicted_estimate_covariance.times(observation_model.transpose());
+		innovation_covariance = observation_model.times(vertical_scratch);
+		innovation_covariance = innovation_covariance.plus(observation_noise_covariance);
 
 		/*
 		 * Invert the innovation covariance. Note: this destroys the innovation
 		 * covariance. TODO: handle inversion failure intelligently.
 		 */
-		Matrix.destructive_invert_matrix(innovation_covariance, inverse_innovation_covariance);
+		inverse_innovation_covariance = innovation_covariance.inverse();
 
 		/*
 		 * Calculate the optimal Kalman gain. Note we still have a useful
 		 * partial product in vertical scratch from the innovation covariance.
 		 */
-		Matrix.multiply_matrix(vertical_scratch, inverse_innovation_covariance, optimal_gain);
+		optimal_gain = vertical_scratch.times(inverse_innovation_covariance);
 
 		/* Estimate the state */
-		Matrix.multiply_matrix(optimal_gain, innovation, state_estimate);
-		Matrix.add_matrix(state_estimate, predicted_state, state_estimate);
+		state_estimate = optimal_gain.times(innovation);
+		state_estimate = state_estimate.plus(predicted_state);
 
 		/* Estimate the state covariance */
-		Matrix.multiply_matrix(optimal_gain, observation_model, big_square_scratch);
-		Matrix.subtract_from_identity_matrix(big_square_scratch);
-		Matrix.multiply_matrix(big_square_scratch, predicted_estimate_covariance, estimate_covariance);
+		big_square_scratch = optimal_gain.times(observation_model);
+		big_square_scratch = Matrix.identity(big_square_scratch.getRowDimension(), big_square_scratch.getColumnDimension()).minus(big_square_scratch);
+		estimate_covariance = big_square_scratch.times(predicted_estimate_covariance);
 	}
 }
